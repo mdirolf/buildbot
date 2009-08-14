@@ -1719,7 +1719,7 @@ class CVS(SourceBase):
         if self.revision:
             command += ['-D', self.revision]
         command += [self.cvsmodule]
-        
+
         c = ShellCommand(self.builder, command, d,
                          sendRC=False, timeout=self.timeout,
                          maxTime=self.maxTime, usePTY=False)
@@ -2111,19 +2111,27 @@ class Git(SourceBase):
             d.addCallback(self._didSubmodules)
         return d
 
-    # Update first runs "git clean", removing local changes, This,
-    # combined with the later "git reset" equates clobbering the repo,
+    # Update first runs "git clean", removing local changes,
+    # if the branch to be checked out has changed.  This, combined
+    # with the later "git reset" equates clobbering the repo,
     # but it's much more efficient.
     def doVCUpdate(self):
-        command = ['git', 'clean', '-f', '-d', '-x']
-        c = ShellCommand(self.builder, command, self._fullSrcdir(),
-                         sendRC=False, timeout=self.timeout,
-                         maxTime=self.maxTime, usePTY=False)
-        self.command = c
-        d = c.start()
-        d.addCallback(self._abandonOnFailure)
-        d.addCallback(self._didClean)
-        return d
+        try:
+            # Check to see if our branch has changed
+            diffbranch = self.sourcedata != self.readSourcedata()
+        except IOError:
+            diffbranch = False
+        if diffbranch:
+            command = ['git', 'clean', '-f', '-d', '-x']
+            c = ShellCommand(self.builder, command, self._fullSrcdir(),
+                             sendRC=False, timeout=self.timeout,
+                             maxTime=self.maxTime, usePTY=False)
+            self.command = c
+            d = c.start()
+            d.addCallback(self._abandonOnFailure)
+            d.addCallback(self._didClean)
+            return d
+        return self._didClean(None)
 
     def _didClean(self, dummy):
         command = ['git', 'fetch', '-t', self.repourl, self.branch]
@@ -2574,12 +2582,12 @@ class Mercurial(SourceBase):
         d = os.path.join(self.builder.basedir, self.srcdir)
         command = [self.vcexe, 'clone', '--verbose', '--noupdate']
 
-        # if got revision, clobbering and in dirname, only clone to specific revision 
-        # (otherwise, do full clone to re-use .hg dir for subsequent byuilds) 
-        if self.args.get('revision') and self.mode == 'clobber' and self.branchType == 'dirname': 
-            command.extend(['--rev', self.args.get('revision')]) 
+        # if got revision, clobbering and in dirname, only clone to specific revision
+        # (otherwise, do full clone to re-use .hg dir for subsequent byuilds)
+        if self.args.get('revision') and self.mode == 'clobber' and self.branchType == 'dirname':
+            command.extend(['--rev', self.args.get('revision')])
         command.extend([self.repourl, d])
-        
+
         c = ShellCommand(self.builder, command, self.builder.basedir,
                          sendRC=False, timeout=self.timeout,
                          maxTime=self.maxTime, usePTY=False)
